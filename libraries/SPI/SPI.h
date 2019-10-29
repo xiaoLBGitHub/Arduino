@@ -24,7 +24,7 @@
 #include <Arduino.h>
 #include <stdlib.h>
 
-#define SPI_HAS_TRANSACTION
+#define SPI_HAS_TRANSACTION 1
 
 // This defines are not representing the real Divider of the ESP8266
 // the Defines match to an AVR Arduino on 16MHz for better compatibility
@@ -64,6 +64,7 @@ public:
   void beginTransaction(SPISettings settings);
   uint8_t transfer(uint8_t data);
   uint16_t transfer16(uint16_t data);
+  void transfer(void *buf, uint16_t count);
   void write(uint8_t data);
   void write16(uint16_t data);
   void write16(uint16_t data, bool msb);
@@ -78,6 +79,7 @@ private:
   uint8_t pinSet;
   void writeBytes_(const uint8_t * data, uint8_t size);
   void transferBytes_(const uint8_t * out, uint8_t * in, uint8_t size);
+  void transferBytesAligned_(const uint8_t * out, uint8_t * in, uint8_t size);
   inline void setDataBits(uint16_t bits);
 };
 

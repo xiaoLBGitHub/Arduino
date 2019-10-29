@@ -38,6 +38,7 @@ extern "C" {
 #include "esp8266_peri.h"
 #include "twi.h"
 #include "core_esp8266_features.h"
+#include "core_esp8266_version.h"
 
 #define HIGH 0x1
 #define LOW  0x0
@@ -141,29 +142,8 @@ void timer0_detachInterrupt(void);
 void ets_intr_lock();
 void ets_intr_unlock();
 
-#ifndef __STRINGIFY
-#define __STRINGIFY(a) #a
-#endif
-
-// these low level routines provide a replacement for SREG interrupt save that AVR uses
-// but are esp8266 specific. A normal use pattern is like
-//
-//{
-//    uint32_t savedPS = xt_rsil(1); // this routine will allow level 2 and above
-//    // do work here
-//    xt_wsr_ps(savedPS); // restore the state
-//}
-//
-// level (0-15), interrupts of the given level and above will be active
-// level 15 will disable ALL interrupts,
-// level 0 will enable ALL interrupts,
-//
-#define xt_rsil(level) (__extension__({uint32_t state; __asm__ __volatile__("rsil %0," __STRINGIFY(level) : "=a" (state)); state;}))
-#define xt_wsr_ps(state)  __asm__ __volatile__("wsr %0,ps; isync" :: "a" (state) : "memory")
-
 #define interrupts() xt_rsil(0)
 #define noInterrupts() xt_rsil(15)
-
 
 #define clockCyclesPerMicrosecond() ( F_CPU / 1000000L )
 #define clockCyclesToMicroseconds(a) ( (a) / clockCyclesPerMicrosecond() )
@@ -187,7 +167,7 @@ typedef uint16_t word;
 #define bit(b) (1UL << (b))
 #define _BV(b) (1UL << (b))
 
-typedef uint8_t boolean;
+typedef bool boolean;
 typedef uint8_t byte;
 
 void init(void);
@@ -217,19 +197,22 @@ uint8_t shiftIn(uint8_t dataPin, uint8_t clockPin, uint8_t bitOrder);
 
 void attachInterrupt(uint8_t pin, void (*)(void), int mode);
 void detachInterrupt(uint8_t pin);
+void attachInterruptArg(uint8_t pin, void (*)(void*), void* arg, int mode);
 
+void preinit(void);
 void setup(void);
 void loop(void);
 
 void yield(void);
 void optimistic_yield(uint32_t interval_us);
 
-#define digitalPinToPort(pin)       (0)
-#define digitalPinToBitMask(pin)    (1UL << (pin))
+#define _PORT_GPIO16    1
+#define digitalPinToPort(pin)       (((pin)==16)?(_PORT_GPIO16):(0))
+#define digitalPinToBitMask(pin)    (((pin)==16)?(1):(1UL << (pin)))
 #define digitalPinToTimer(pin)      (0)
-#define portOutputRegister(port)    ((volatile uint32_t*) &GPO)
-#define portInputRegister(port)     ((volatile uint32_t*) &GPI)
-#define portModeRegister(port)      ((volatile uint32_t*) &GPE)
+#define portOutputRegister(port)    (((port)==_PORT_GPIO16)?((volatile uint32_t*) &GP16O):((volatile uint32_t*) &GPO))
+#define portInputRegister(port)     (((port)==_PORT_GPIO16)?((volatile uint32_t*) &GP16I):((volatile uint32_t*) &GPI))
+#define portModeRegister(port)      (((port)==_PORT_GPIO16)?((volatile uint32_t*) &GP16E):((volatile uint32_t*) &GPE))
 
 #define NOT_A_PIN -1
 #define NOT_A_PORT -1
@@ -252,7 +235,8 @@ const int TIM_DIV265 __attribute__((deprecated, weak)) = TIM_DIV256;
 #ifdef __cplusplus
 
 #include <algorithm>
-#include "pgmspace.h"
+#include <cmath>
+#include <pgmspace.h>
 
 #include "WCharacter.h"
 #include "WString.h"
@@ -267,8 +251,8 @@ using std::max;
 using std::isinf;
 using std::isnan;
 
-#define _min(a,b) ((a)<(b)?(a):(b))
-#define _max(a,b) ((a)>(b)?(a):(b))
+#define _min(a,b) ({ decltype(a) _a = (a); decltype(b) _b = (b); _a < _b? _a : _b; })
+#define _max(a,b) ({ decltype(a) _a = (a); decltype(b) _b = (b); _a > _b? _a : _b; })
 
 uint16_t makeWord(uint16_t w);
 uint16_t makeWord(byte h, byte l);
@@ -291,10 +275,13 @@ long secureRandom(long);
 long secureRandom(long, long);
 long map(long, long, long, long, long);
 
-extern "C" void configTime(long timezone, int daylightOffset_sec,
-    const char* server1, const char* server2 = nullptr, const char* server3 = nullptr);
+void configTime(int timezone, int daylightOffset_sec, const char* server1,
+    const char* server2 = nullptr, const char* server3 = nullptr);
 
-#endif
+void configTime(const char* tz, const char* server1,
+    const char* server2 = nullptr, const char* server3 = nullptr);
+
+#endif // __cplusplus
 
 #include "pins_arduino.h"
 

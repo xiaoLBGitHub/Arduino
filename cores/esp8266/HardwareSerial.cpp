@@ -27,6 +27,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <inttypes.h>
+#include <PolledTimeout.h>
 #include "Arduino.h"
 #include "HardwareSerial.h"
 #include "Esp.h"
@@ -57,6 +58,15 @@ void HardwareSerial::end()
 
     uart_uninit(_uart);
     _uart = NULL;
+}
+
+void HardwareSerial::updateBaudRate(unsigned long baud)
+{
+    if(!_uart) {
+        return;
+    }
+
+    uart_set_baudrate(_uart, baud);
 }
 
 size_t HardwareSerial::setRxBufferSize(size_t size){
@@ -98,14 +108,56 @@ int HardwareSerial::available(void)
 
 void HardwareSerial::flush()
 {
+    uint8_t bit_length = 0;
     if(!_uart || !uart_tx_enabled(_uart)) {
         return;
     }
 
+    bit_length = uart_get_bit_length(_uart_nr); // data width, parity and stop
     uart_wait_tx_empty(_uart);
     //Workaround for a bug in serial not actually being finished yet
     //Wait for 8 data bits, 1 parity and 2 stop bits, just in case
-    delayMicroseconds(11000000 / uart_get_baudrate(_uart) + 1);
+    delayMicroseconds(bit_length * 1000000 / uart_get_baudrate(_uart) + 1);
+}
+
+void HardwareSerial::startDetectBaudrate()
+{
+    uart_start_detect_baudrate(_uart_nr);
+}
+
+unsigned long HardwareSerial::testBaudrate()
+{
+    return uart_detect_baudrate(_uart_nr);
+}
+
+unsigned long HardwareSerial::detectBaudrate(time_t timeoutMillis)
+{
+    esp8266::polledTimeout::oneShotFastMs timeOut(timeoutMillis);
+    unsigned long detectedBaudrate;
+    while (!timeOut) {
+        if ((detectedBaudrate = testBaudrate())) {
+          break;
+        }
+        yield();
+        delay(100);
+    }
+    return detectedBaudrate;
+}
+
+size_t HardwareSerial::readBytes(char* buffer, size_t size)
+{
+    size_t got = 0;
+
+    while (got < size)
+    {
+        esp8266::polledTimeout::oneShotFastMs timeOut(_timeout);
+        size_t avail;
+        while ((avail = available()) == 0 && !timeOut);
+        if (avail == 0)
+            break;
+        got += read(buffer + got, std::min(size - got, avail));
+    }
+    return got;
 }
 
 #if !defined(NO_GLOBAL_INSTANCES) && !defined(NO_GLOBAL_SERIAL)
